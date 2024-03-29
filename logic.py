@@ -3,6 +3,8 @@ import numpy as np
 
 class Game():
     def __init__(self, size=4, invalid_move_penalty=0):
+        if type(size) == int:
+            size = (size, size)
         self.size = size
         self.invalid_move_penalty = invalid_move_penalty
         self.score = 0
@@ -12,13 +14,15 @@ class Game():
         """
         Sets the board to all zeros and then add two random tiles. Sets the score to zero.
         """
-        pass
+        self.clear()
+        for _ in range(2):
+            self.spawn_tile()
 
     def clear(self):
         """
         Sets the board to be all zeros and sets the score to zero.
         """
-        pass
+        self.board *= 0
 
     def set_state(self, board, score):
         """
@@ -28,7 +32,8 @@ class Game():
         board (numpy.ndarray): the array in which the board will be set as (will first be copied)
         score (int): the value to set the score as
         """
-        pass
+        self.set_board(board)
+        self.set_score(score)
 
     def set_board(self, board):
         """
@@ -37,7 +42,7 @@ class Game():
         Inputs:
         board (numpy.ndarray): the array in which the board will be set as (will first be copied)
         """
-        pass
+        self.board = board.copy()
 
     def set_score(self, score):
         """
@@ -46,7 +51,7 @@ class Game():
         Inputs:
         score (int): the value to set the score as
         """
-        pass
+        self.score = score
 
     def get_new_tile_options(self):
         """
@@ -59,13 +64,33 @@ class Game():
         probabilities (numpy.ndarray): 1D array (n_options) with the probability of each option
                                        being selected
         """
-        pass
+        indexes = np.argwhere(self.board == 0)
+        values = np.ones(indexes.shape[0], dtype=int) + 1
+        probabilities = np.ones(indexes.shape[0]) * 0.8
+
+        indexes = np.concatenate((indexes, indexes), axis=0)
+        values = np.concatenate((values, values*2))
+        probabilities = np.concatenate((probabilities, 1-probabilities))
+        
+        return indexes, values, probabilities
 
     def spawn_tile(self):
         """
         Add a random new tile (either 2 or 4) to a randomly selected open location.
         """
-        pass
+        indexes, values, probabilities = self.get_new_tile_options()
+        selection_index = np.random.choice(np.arange(probabilities.shape[0]), p=probabilities)
+        self.add_tile(indexes[selection_index,:], values[selection_index])
+
+    def add_tile(self, index, value):
+        """
+        Add a tile to the board.
+
+        Inputs:
+        index (iterable (len-2)): row and column index for the tile to be placed
+        value (int): value to be placed at the specified index
+        """
+        self.board[index[0], index[1]] = value
 
     def swipe(self, action):
         """"
@@ -77,7 +102,8 @@ class Game():
         Returns:
         points (int): the number of points earned on this swipe
         """
-        pass
+        with BoardTransformer(self.board, action) as board:
+            self.swipe_left()
 
     def swipe_left(self):
         """
@@ -127,7 +153,19 @@ class Game():
         points (int): the number of points that were earned in this step
         game_over (bool): True is the game is over (i.e. there are no valid moves in the new state), False otherwise
         """
-        pass
+        points = self.swipe(action)
+
+        if return_distribution:
+            indecies, values, probabilities = self.get_new_tile_options()
+            M = probabilities.shape[0]
+            next_boards = np.tile(np.expand_dims(self.board.copy(), 0), (M, 1, 1))
+            next_boards[np.arange(M), indecies[:,0], indecies[:,1]] = values
+            next_state = (next_boards, probabilities)
+        else:
+            self.spawn_tile()
+            next_state = self.board.copy()
+        
+        return next_state, points, self.check_loss()
 
     def check_loss(self):
         """"
@@ -136,7 +174,13 @@ class Game():
         Returns:
         is_loss (bool): True is the game is lost, false otherwise
         """
-        pass
+        if np.sum(self.board == 0) != 0:
+            is_loss = False
+        else:
+            match = np.any(self.board[:,:-1] == self.board[:,1:])
+            match = match or np.any(self.board[:-1,:] == self.board[1:,:])
+            is_loss = not match
+        return is_loss
 
     def get_state(self):
         """
@@ -146,7 +190,7 @@ class Game():
         board (numpy.ndarray): a copy of the current board
         score (int): the current score of the game
         """
-        pass
+        return self.get_board(), self.get_score()
     
     def get_board(self):
         """
@@ -155,7 +199,7 @@ class Game():
         Returns:
         board (numpy.ndarray): a copy of the current board
         """
-        pass
+        return self.board.copy()
 
     def get_score(self):
         """
@@ -164,7 +208,7 @@ class Game():
         Returns:
         score (int): the current score of the game
         """
-        pass
+        return self.score
 
 
 class BoardTransformer():
@@ -173,7 +217,23 @@ class BoardTransformer():
         self.action = action
 
     def __enter__(self):
-        pass
+        """
+        Orient board so that a left swipe will result in the board being updated
+        appropriately for the provided action.
+        """
+        if self.action == 2 or self.action == 3:
+            self.board = np.transpose(self.board)
+        
+        if self.action == 1 or self.action == 3:
+            self.board = np.flip(self.board, axis=1)
+        return self.board
 
     def __exit__(self):
-        pass
+        """
+        Undo the orientation to return the board to it's original state.
+        """
+        if self.action == 1 or self.action == 3:
+            self.board = np.flip(self.board, axis=1)
+
+        if self.action == 2 or self.action == 3:
+            self.board = np.transpose(self.board)
